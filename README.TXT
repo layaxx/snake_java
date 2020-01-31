@@ -1,7 +1,6 @@
-PROJEKTBEZEICHNUNG:					Snake V2
-PROJEKTZWECK:						Schulprojekt Q11
-VERSION oder DATUM:					V2.2 | 31.01.2020
-AUTOR:								Yannick Lang
+Snake V2
+Schulprojekt Q11
+V2.2 | 31.01.2020 (restructured/refactored code, did not change core functionality)
 
 
 How to Play:
