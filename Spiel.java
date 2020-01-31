@@ -1,273 +1,245 @@
+
 /**
  * Spielsteuerungsklasse 
  * known bugs:
  * - Main Menu requires ENTER to be pressed twice if accessed from the death screen
  * features to be implemented:
  * - Sounds
- * - auf Klassen aufteilen ??
  */
 import ea.*;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.ArrayList;
-public class Spiel extends Game implements Ticker
-{
+
+@SuppressWarnings("serial")
+public class Spiel extends Game implements Ticker {
     private Raum[][] raum;
     private int[][] matrix;
-    /**   Zum Speichern von Game Informationen:
-     *    0 = leeres Feld   
-     *    1 = Schlange
-     *    2 = Apfel
-     */  
+    /**
+     * To manage Information about current Game 0 = field is empty 1 = field is
+     * occupied by snake 2 = field is occupied by apple
+     */
+
+    private int lengthOfPlayingField; // length of matrix & raum
     private int score;
-    private Text t;                         //  Score-Anzeige
-    private Text hscore;                    //  Highscore-Anzeige
-    private Text nHS;                       //  Anzeige für neuen Highscore
     private int highscore;
-    private int ax;
-    private int ay;
-    private ArrayList<Vektor> schlange;     //  verwaltet alle von der Schlange belegten Felder in richtiger Reihenfolge
-    private Vektor akt;                     //  aktuelle Bewegeungsrichtung    
-    private int speed;                      //  1000 = 1 Aufruf/1000ms  
-    private Knoten go;
+    private int speed; // ms per tick; recommended is 130
+
+    private Text textScore; // Displays current Score
+    private Text hscore; // Displays current Highscore
+    private Text textNewHighScore; // Displays new Highscore
+
+    private ArrayList<Vektor> snake; // verwaltet alle von der Schlange belegten Felder in richtiger Reihenfolge
+    private Vektor currentMovementVector;
+    private Apple apple;
+
+    private Knoten screenMainMenu; // Main Menu
+    private Knoten symbolPause;
+    private Knoten screenGameOver;
     private Knoten spielfeld;
-    private boolean ended;
-    private Knoten mm;                      // Main Menu
-    private boolean menu;
-    private boolean pause;
-    private Knoten psymbol;
+
+    private int status; // 0 = Menu | 1 = Paused | 2 = Ended | 3 = running
 
     public Spiel() {
-        super(400, 410, "Snake | V2");
-        matrix = new int[17][17];   
-        akt = new Vektor(1, 0);
-        speed = 130;                        //  Speed anpassbar. kleinerer Wert => schneller
-        // manager.anmelden(this, speed); siehe starten()
-        ended = false;
-        pause = false;
-        //  Spielfeld
-        raum = new Raum[17][17];
+        super(400, 410, "Snake | V2.2");
+        lengthOfPlayingField = 17;
+        matrix = new int[lengthOfPlayingField][lengthOfPlayingField];
+        currentMovementVector = new Vektor(1, 0);
+        speed = 130; // Speed anpassbar. kleinerer Wert => schneller
+        status = 0;
+
+        // prepare Spielfeld
+        raum = new Raum[lengthOfPlayingField][lengthOfPlayingField];
         spielfeld = new Knoten();
-        for(int i = 0; i < 17; i++){
-            for(int j = 0; j < 17; j++){
+        for (int i = 0; i < lengthOfPlayingField; i++) {
+            for (int j = 0; j < lengthOfPlayingField; j++) {
                 raum[i][j] = new Rechteck(20 + i * 20 + i, 30 + j * 20 + j, 20, 20);
-            }
-        }
-        for(int i = 0; i < 17; i++){
-            for(int j = 0; j < 17; j++){
                 spielfeld.add(raum[i][j]);
             }
         }
-        // wurzel.add(spielfeld); siehe starten()
-        //  Score-Anzeige
+
+        // prepare Score display
         score = 0;
-        t = new Text(20, 0, 25, String.valueOf(score));
-        // wurzel.add(t); siehe starten()
-        //  Highscore-Anzeige
+        textScore = new Text(20, 0, 25, String.valueOf(score));
+
+        // prepare Highscore display
         int[] load = DateiManager.integerArrayEinlesen("highscore.eaa");
         highscore = load[0];
         hscore = new Text(100, 0, 25, "HS: " + String.valueOf(highscore));
-        // wurzel.add(hscore); siehe starten()
-        nHS = new Text(60, 60, 40, "new Highscore!");
-        nHS.farbeSetzen("rot");
-        //  Game-over Anzeige
-        Text g = new Text(30, 100, 115, "GAME");
-        Text o = new Text(30, 230, 120, "OVER");
-        Text h = new Text(85, 385, 19, "press ENTER to continue");
-        g.farbeSetzen("schwarz");
-        o.farbeSetzen("schwarz");
-        h.farbeSetzen("weiß");
-        go = new Knoten();        
-        go.add(g);
-        go.add(o);
-        go.add(h);
-        //  Schlange
-        schlange = new ArrayList<Vektor>();
-        Rechteck r = null;
-        for(int i = 0; i < 3; i++){
+        textNewHighScore = new Text(60, 60, 40, "new Highscore!");
+        textNewHighScore.farbeSetzen("rot");
+
+        // prepare Game-over display
+        Text textGame = new Text(30, 100, 115, "GAME");
+        Text textOver = new Text(30, 230, 120, "OVER");
+        Text textPressEnterToContinue = new Text(85, 385, 19, "press ENTER to continue");
+        textGame.farbeSetzen("schwarz");
+        textOver.farbeSetzen("schwarz");
+        textPressEnterToContinue.farbeSetzen("weiß");
+        screenGameOver = new Knoten();
+        screenGameOver.add(textGame);
+        screenGameOver.add(textOver);
+        screenGameOver.add(textPressEnterToContinue);
+
+        // snake
+        snake = new ArrayList<Vektor>();
+        Rechteck r;
+        for (int i = 0; i < 3; i++) {
             matrix[i][9] = 1;
             r = (Rechteck) raum[i][9];
             r.farbeSetzen(new Farbe(0, 100, 0));
-            schlange.add(0, new Vektor(i, 9));
-        }    
-        //  Apfel generieren
-        ax = ThreadLocalRandom.current().nextInt(0, 17);
-        ay = ThreadLocalRandom.current().nextInt(0, 17);
-        while(matrix[ax][ay] != 0){
-            ax = ThreadLocalRandom.current().nextInt(0, 17);
-            ay = ThreadLocalRandom.current().nextInt(0, 17);
+            snake.add(0, new Vektor(i, 9));
         }
-        // System.out.println("Apfel 1: " + ax + " " + ay); siehe starten()
-        r = (Rechteck) raum[ax][ay];
-        r.farbeSetzen("Rot");
-        matrix[ax][ay] = 2;
-        // Main Menu
-        menu = true;
-        mm = new Knoten();
-        mm.add(new Rechteck(30, 250, 340, 100));
-        Text start = new Text(70, 245, 80, "START");
-        start.farbeSetzen("schwarz");
-        mm.add(start);
-        Text press = new Text(155, 330, 15, "press ENTER");
-        press.farbeSetzen("schwarz");
-        mm.add(press);
-        Text snake = new Text(30, 80, 60, "SNAKE");
-        snake.fontSetzen("Snake in the Boot");
-        mm.add(snake);
-        mm.add(new Text(30, 370, 15, "V2 | 08.07.2018"));
-        mm.add(new Text(30, 390, 12, "created by Jonas Degel, Benedikt Beck & Yannick Lang"));
-        wurzel.add(mm);
-        // Pause Symbol
-        psymbol = new Knoten();
-        psymbol.add(new Rechteck(10, 10, 8, 30));
-        psymbol.add(new Rechteck(25, 10, 8, 30));
+
+        generateNewApple();
+
+        // prepare Main Menu
+        status = 0;
+        screenMainMenu = new Knoten();
+        screenMainMenu.add(new Rechteck(30, 250, 340, 100));
+        Text textStart = new Text(70, 245, 80, "START");
+        textStart.farbeSetzen("schwarz");
+        screenMainMenu.add(textStart);
+        Text textPressEnter = new Text(155, 330, 15, "press ENTER");
+        textPressEnter.farbeSetzen("schwarz");
+        screenMainMenu.add(textPressEnter);
+        Text textSnake = new Text(30, 80, 60, "SNAKE");
+        textSnake.fontSetzen("Snake in the Boot");
+        screenMainMenu.add(textSnake);
+        screenMainMenu.add(new Text(30, 370, 15, "V2.2 | 31.01.2020"));
+        screenMainMenu.add(new Text(30, 390, 12, "created by Yannick Lang"));
+        wurzel.add(screenMainMenu);
+
+        // prepar ePause Symbol
+        symbolPause = new Knoten();
+        symbolPause.add(new Rechteck(10, 10, 8, 30));
+        symbolPause.add(new Rechteck(25, 10, 8, 30));
     }
 
-    public void tasteReagieren(int tastencode) {
-        switch(tastencode) {
-            case 26: // Pfeil rauf
-            if(akt.dY() != 1){    //  verhindert Insta-death bei "falscher" Eingabe
-                akt = new Vektor(0 ,-1);
+    public void tasteReagieren(int keyCode) {
+        switch (keyCode) {
+        case 26: // Arrow Up
+            if (currentMovementVector.dY() != 1) { // required to prevent instant death if button is pressed again
+                currentMovementVector = new Vektor(0, -1);
             }
             break;
-            case 27: // Pfeil rechts
-            if(akt.dX() != -1){   //  verhindert Insta-death bei "falscher" Eingabe
-                akt = new Vektor(1 ,0);
+        case 27: // Arrow right
+            if (currentMovementVector.dX() != -1) { // required to prevent instant death if button is pressed again
+                currentMovementVector = new Vektor(1, 0);
             }
             break;
-            case 28: // Pfeil runter
-            if(akt.dY() != -1){   //  verhindert Insta-death bei "falscher" Eingabe
-                akt = new Vektor(0 ,1);
+        case 28: // Arrow down
+            if (currentMovementVector.dY() != -1) { // required to prevent instant death if button is pressed again
+                currentMovementVector = new Vektor(0, 1);
             }
             break;
-            case 29: // Pfeil links
-            if(akt.dX() != 1){    //  verhindert Insta-death bei "falscher" Eingabe
-                akt = new Vektor(-1 ,0);
+        case 29: // Arrow left
+            if (currentMovementVector.dX() != 1) { // required to prevent instant death if button is pressed again
+                currentMovementVector = new Vektor(-1, 0);
             }
             break;
-            case 31: // Enter
-            if(ended){            //  verhindert Reset während Game läuft
+        case 31: // Enter
+            if (status == 2) { // prevents Reset while Game is running
                 this.reset();
-            }
-            else if(menu){      
+            } else if (status == 0) {
                 this.starten();
             }
             break;
-            case 38: // 5
-            if(menu == false
-            && ended){    //  verhindert Insta-death bei "falscher" Eingabe
+        case 38: // 5
+            if (status == 2) { // prevents Reset while Game is Running
                 this.zumMenue();
-            }
-            else if(menu == false 
-            && ended == false
-            && pause == false){
+            } else if (status == 3) {
                 this.pause();
-            }
-            else if (pause){
+            } else if (status == 1) {
                 this.unpause();
             }
             break;
         }
     }
 
-    // Methode zum Starten nach dem Main Menu
-    public void starten(){
-        System.out.println("Apfel 1: " + ax + " " + ay);
+    // Method to start Game from mainMenu
+    private void starten() {
         wurzel.add(hscore);
-        wurzel.add(t);
+        wurzel.add(textScore);
         wurzel.add(spielfeld);
-        wurzel.entfernen(mm);
-        menu = false;
+        wurzel.entfernen(screenMainMenu);
+        status = 3;
         manager.anmelden(this, speed);
     }
 
-    public void pause(){
+    private void pause() {
         manager.anhalten(this);
-        wurzel.add(psymbol);
-        pause = true;
+        wurzel.add(symbolPause);
+        status = 1;
     }
 
-    public void unpause(){
+    private void unpause() {
         manager.starten(this, speed);
-        wurzel.entfernen(psymbol);
-        pause = false;
+        wurzel.entfernen(symbolPause);
+        status = 3;
     }
-    
-    public void zumMenue(){
-        wurzel.add(mm);
+
+    private void zumMenue() {
+        wurzel.add(screenMainMenu);
         wurzel.entfernen(hscore);
-        wurzel.entfernen(t);
+        wurzel.entfernen(textScore);
         wurzel.entfernen(spielfeld);
-        wurzel.entfernen(go);
-        menu = true;
+        wurzel.entfernen(screenGameOver);
+        status = 0;
         manager.anhalten(this);
     }
+
+
 
     public void tick() {
-        Vektor kopf = schlange.get(0);
-        Vektor neu = kopf.summe(akt);  
+        Vektor kopf = snake.get(0);
+        Vektor neu = kopf.summe(currentMovementVector);
         int x_neu = neu.dX();
         int y_neu = neu.dY();
-        Vektor ende = schlange.get(score + 2);
+        Vektor ende = snake.get(score + 2);
         int x_ende = ende.dX();
         int y_ende = ende.dY();
-        if(x_neu >=0
-        && x_neu < 17
-        && y_neu >= 0
-        && y_neu < 17)
-        {
-            if(matrix[x_neu][y_neu] == 0){
+        if (x_neu >= 0 && x_neu < lengthOfPlayingField && y_neu >= 0 && y_neu < lengthOfPlayingField) {
+            if (matrix[x_neu][y_neu] == 0) {
                 // Schlange bewegen
                 matrix[x_neu][y_neu] = 1;
                 Rechteck r = (Rechteck) raum[x_neu][y_neu];
                 r.farbeSetzen(new Farbe(0, 100, 0));
-                schlange.add(0, new Vektor(x_neu, y_neu));
-                //  Ende entfernen
+                snake.add(0, new Vektor(x_neu, y_neu));
+                // Ende entfernen
                 r = (Rechteck) raum[x_ende][y_ende];
                 r.farbeSetzen(new Farbe(255, 255, 255));
                 matrix[x_ende][y_ende] = 0;
-                schlange.remove(score + 3);
-            }
-            else if(matrix[x_neu][y_neu] == 2){
-                //  Schlange bewegen
+                snake.remove(score + 3);
+            } else if (matrix[x_neu][y_neu] == 2) {
+                // Schlange bewegen
                 matrix[x_neu][y_neu] = 1;
                 Rechteck r = (Rechteck) raum[x_neu][y_neu];
                 r.farbeSetzen(new Farbe(0, 100, 0));
-                schlange.add(0, new Vektor(x_neu, y_neu));
-                //  Score anpassen
+                snake.add(0, new Vektor(x_neu, y_neu));
+                // Score anpassen
                 score++;
-                t.inhaltSetzen(String.valueOf(score));
-                //  neuen Apfel generieren
-                while(matrix[ax][ay] != 0){
-                    ax = ThreadLocalRandom.current().nextInt(0, 17);
-                    ay = ThreadLocalRandom.current().nextInt(0, 17);
-                }
-                int anzahl = score + 1;
-                System.out.println("Apfel " + anzahl +": " + ax + " " + ay);
-                r = (Rechteck) raum[ax][ay];
-                r.farbeSetzen("Rot");
-                matrix[ax][ay] = 2;
-            }
-            else{
-                wurzel.add(go);
+                textScore.inhaltSetzen(String.valueOf(score));
+                // neuen Apfel generieren
+                generateNewApple();
+            } else {
+                wurzel.add(screenGameOver);
                 manager.anhalten(this);
                 // Highscore?
-                if(score > highscore){
-                    wurzel.add(nHS);
-                    this.save();
+                if (score > highscore) {
+                    wurzel.add(textNewHighScore);
+                    this.saveHighscore();
                 }
-                ended = true;
+                status = 2;
             }
-        }
-        else{
-            wurzel.add(go);
+        } else {
+            wurzel.add(screenGameOver);
             manager.anhalten(this);
             // Highscore?
-            if(score > highscore){
-                wurzel.add(nHS);
-                this.save();
+            if (score > highscore) {
+                wurzel.add(textNewHighScore);
+                this.saveHighscore();
             }
-            ended = true;
-        } 
+            status = 2;
+        }
     }
 
     public static void main(String[] args) {
@@ -275,55 +247,57 @@ public class Spiel extends Game implements Ticker
     }
 
     // Methode zum Speichern des Highscores
-    public void save(){
-        int[] save = new int[1];
-        save[0] = score;
+    private void saveHighscore() {
+        int[] save = { score };
         DateiManager.integerArraySchreiben(save, "highscore.eaa");
     }
 
-    // Methode zum Zurücksetzen (für neues Spiel)
-    public void reset(){
+    // Method to reset game
+    private void reset() {
         System.out.println("new Game started");
-        akt = new Vektor(1, 0);
-        ended = false;
-        Rechteck r = null;
-        matrix =  new int[17][17];        
-        //  Spielfeld
-        for(int derder = 0; derder < 17; derder++){
-            for(int dasdas = 0; dasdas < 17; dasdas++){
-                r = (Rechteck) raum[derder][dasdas];
+        currentMovementVector = new Vektor(1, 0);
+        status = 3;
+        Rechteck r;
+        matrix = new int[lengthOfPlayingField][lengthOfPlayingField];
+        // reset Spielfeld
+        for (int i = 0; i < lengthOfPlayingField; i++) {
+            for (int j = 0; j < lengthOfPlayingField; j++) {
+                r = (Rechteck) raum[i][j];
                 r.farbeSetzen(new Farbe(255, 255, 255));
             }
         }
-        //  Score-Anzeige
+        // Score Display
         score = 0;
-        t.inhaltSetzen(String.valueOf(score));
-        //  Highscore-Anzeige
+        textScore.inhaltSetzen(String.valueOf(score));
+        // Highscore Display
         int[] load = DateiManager.integerArrayEinlesen("highscore.eaa");
         highscore = load[0];
         hscore.inhaltSetzen("HS: " + String.valueOf(highscore));
-        //  Game-over Anzeige
-        wurzel.entfernen(go);
-        wurzel.entfernen(nHS);
-        //  Schlange
-        schlange = new ArrayList<Vektor>();
-        for(int i = 0; i < 3; i++){
+        // Game-over Display
+        wurzel.entfernen(screenGameOver);
+        wurzel.entfernen(textNewHighScore);
+        // Schlange
+        snake = new ArrayList<Vektor>();
+        for (int i = 0; i < 3; i++) {
             matrix[i][9] = 1;
             r = (Rechteck) raum[i][9];
             r.farbeSetzen(new Farbe(0, 100, 0));
-            schlange.add(0, new Vektor(i, 9));
-        }    
-        //  Apfel generieren
-        ax = ThreadLocalRandom.current().nextInt(0, 17);
-        ay = ThreadLocalRandom.current().nextInt(0, 17);
-        while(matrix[ax][ay] != 0){
-            ax = ThreadLocalRandom.current().nextInt(0, 17);
-            ay = ThreadLocalRandom.current().nextInt(0, 17);
+            snake.add(0, new Vektor(i, 9));
         }
-        System.out.println("Apfel 1: " + ax + " " + ay);
-        r = (Rechteck) raum[ax][ay];
-        r.farbeSetzen("Rot");
-        matrix[ax][ay] = 2;
+        // generate new Apple
+        generateNewApple();
         manager.starten(this, speed);
+    }
+
+    private void generateNewApple() {
+        apple = new Apple(lengthOfPlayingField);
+        while (matrix[apple.getXPosition()][apple.getYPosition()] != 0) {
+            apple = new Apple(lengthOfPlayingField);
+        }
+        System.out.println("generated new Apple at: " + apple.getXPosition() + " " + apple.getYPosition());
+        Rechteck r;
+        r = (Rechteck) raum[apple.getXPosition()][apple.getYPosition()];
+        r.farbeSetzen("Rot");
+        matrix[apple.getXPosition()][apple.getYPosition()] = 2;
     }
 }
