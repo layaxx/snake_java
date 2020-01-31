@@ -11,4 +11,4 @@ Enter to restart game from game-over
 arrow keys to change direction of snake
 
 5 (not on numpad) to pause/unpause game
-
+5 (not on numpad) to go to main menu from game-over
